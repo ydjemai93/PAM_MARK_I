@@ -4,7 +4,6 @@ import json
 import time
 import asyncio
 from livekit import api
-from pydantic import BaseModel, Field
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -60,23 +59,24 @@ class LiveKitService:
         logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
         
         try:
-            # Préparation de la requête de dispatch
-            request = {
-                "name": agent_name,
+            # Préparation des options de dispatch
+            dispatch_options = {
+                "agent_name": agent_name,
                 "room": room_name
             }
             
+            # Ajout des métadonnées si fournies
             if metadata:
-                request["metadata"] = metadata
+                dispatch_options["metadata"] = metadata
             
-            # Utilisation directe de la méthode de dispatch
-            response = await self.livekit_api.agent_dispatch.create_dispatch(**request)
+            # Dispatch de l'agent
+            response = await self.livekit_api.agent_dispatch.create_dispatch(**dispatch_options)
             
             elapsed_time = time.time() - start_time
-            logger.info(f"Agent dispatché avec succès: id={response.id}, agent={agent_name}, salle={room_name}, temps={elapsed_time:.2f}s")
+            logger.info(f"Agent dispatché avec succès: agent={agent_name}, salle={room_name}, temps={elapsed_time:.2f}s")
             
             return {
-                "dispatch_id": response.id,
+                "dispatch_id": getattr(response, 'id', None),
                 "agent_name": agent_name,
                 "room_name": room_name,
                 "status": "dispatched",
@@ -85,7 +85,13 @@ class LiveKitService:
         except Exception as e:
             elapsed_time = time.time() - start_time
             logger.error(f"Erreur lors du dispatch de l'agent: {e}, temps={elapsed_time:.2f}s")
-            return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
+            # Log détaillé de l'exception
+            logger.exception("Détails complets de l'erreur de dispatch")
+            return {
+                "status": "error", 
+                "error": str(e), 
+                "elapsed_time_ms": int(elapsed_time * 1000)
+            }
     
     async def _check_agent_status(self, agent_name: str, room_name: str) -> None:
         """
