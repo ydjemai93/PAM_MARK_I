@@ -42,34 +42,63 @@ class SipService:
     
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
+            # Préparation de la requête de création de participant SIP
             request = api.CreateSIPParticipantRequest(
-                sip_trunk_id=trunk_id,
-                sip_dial_to=phone_number,
-                room_name=room_name,
-                participant_identity="caller",
-                participant_name="Phone Caller",
-                play_dialtone=True,
-                attributes={"call_id": call_id}  # Pour référencer l'ID d'appel dans Xano
+                trunk_id=trunk_id,
+                to=phone_number,
+                room=room_name,
+                identity="caller",
+                name="Phone Caller",
+                play_dialtone=True,  # Ajout de l'option de tonalité de numérotation
+                attributes={
+                    "call_id": call_id,
+                    "phone_number": phone_number
+                }
             )
             
+            # Création du participant SIP
             response = await self.livekit_api.sip.create_sip_participant(request)
             
-            # Notifier Xano du début de l'appel
-            await self._send_call_event_to_xano(call_id, "dialing", response.sid)
-            
-            return {
+            # Préparation des informations de suivi
+            call_info = {
                 "participant_id": response.sid,
-                "room_name": response.room_name,
-                "status": "dialing"
+                "room_name": response.room,
+                "status": "dialing",
+                "trunk_id": trunk_id,
+                "phone_number": phone_number
             }
-        except Exception as e:
-            logger.error(f"Error making outbound call: {e}")
-            # Notifier Xano de l'échec
-            await self._send_call_event_to_xano(call_id, "failed", None, error=str(e))
-            return {"status": "error", "error": str(e)}
             
-    async def _send_call_event_to_xano(self, call_id: str, status: str, call_sid: str = None, error: str = None):
+            # Notifier Xano du début de l'appel
+            await self._send_call_event_to_xano(call_id, "dialing", response.sid, additional_info=call_info)
+            
+            logger.info(f"Appel sortant initié : {call_info}")
+            
+            return call_info
+        except Exception as e:
+            logger.error(f"Erreur lors de la création de l'appel sortant: {e}")
+            
+            # Log détaillé de l'exception
+            logger.exception("Détails complets de l'erreur d'appel")
+            
+            # Préparer les informations d'erreur
+            error_info = {
+                "status": "error", 
+                "error": str(e),
+                "trunk_id": trunk_id,
+                "phone_number": phone_number
+            }
+            
+            # Notifier Xano de l'échec
+            await self._send_call_event_to_xano(call_id, "failed", None, error=error_info)
+            
+            return error_info
+            
+    async def _send_call_event_to_xano(self, call_id: str, status: str, call_sid: str = None, error: Any = None, additional_info: Dict[str, Any] = None):
+        """
+        Envoi d'événements d'appel à Xano avec des informations détaillées
+        """
         try:
+            # Préparation du payload avec toutes les informations disponibles
             payload = {
                 "call_id": call_id,
                 "status": status,
@@ -77,8 +106,17 @@ class SipService:
                 "error": error
             }
             
-            headers = {"X-API-Key": self.xano_api_key}
+            # Ajouter des informations supplémentaires si disponibles
+            if additional_info:
+                payload.update(additional_info)
             
+            # Préparer les en-têtes avec la clé API
+            headers = {
+                "X-API-Key": self.xano_api_key,
+                "Content-Type": "application/json"
+            }
+            
+            # Envoi asynchrone à Xano
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     self.xano_webhook_url,
@@ -86,8 +124,14 @@ class SipService:
                     headers=headers
                 )
                 
-                logger.info(f"Call event sent to Xano, status: {response.status_code}")
+                # Vérifier et log du statut de la réponse
+                if response.status_code not in [200, 201]:
+                    logger.warning(f"Échec de l'envoi de l'événement à Xano. Statut: {response.status_code}, Réponse: {response.text}")
+                else:
+                    logger.info(f"Événement d'appel envoyé à Xano, statut: {response.status_code}")
+        
         except Exception as e:
-            logger.error(f"Error sending call event to Xano: {e}")
+            logger.error(f"Erreur lors de l'envoi de l'événement d'appel à Xano: {e}")
 
+# Instancier le service
 sip_service = SipService()
