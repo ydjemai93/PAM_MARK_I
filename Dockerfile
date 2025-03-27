@@ -33,11 +33,16 @@ RUN pip install --no-cache-dir livekit-plugins-openai==0.3.0 || echo "Erreur ave
 RUN pip install --no-cache-dir livekit-plugins-deepgram==0.1.0 || echo "Erreur avec livekit-plugins-deepgram"
 RUN pip install --no-cache-dir git+https://github.com/livekit/livekit-plugins-silero.git || echo "Erreur avec livekit-plugins-silero"
 
+# Assurez-vous que cette ligne est présente dans votre Dockerfile après l'installation des autres dépendances
+RUN pip install --no-cache-dir uvicorn==0.23.2 fastapi==0.103.1
 # Copier le reste du code
 COPY . .
 
 # Exposer le port pour l'application
 EXPOSE 8000
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
 # Commande pour démarrer l'application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
