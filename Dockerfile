@@ -40,4 +40,4 @@ COPY . .
 EXPOSE 8000
 
 # Commande pour démarrer l'application
-CMD ["python", "agent.py", "dev"]
+CMD ["python", "main.py", "dev"]
