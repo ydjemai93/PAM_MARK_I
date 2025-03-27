@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir python-dotenv && \
     pip install --no-cache-dir httpx==0.24.1 && \
     pip install --no-cache-dir protobuf==4.23.4 && \
     pip install --no-cache-dir aiohttp==3.8.5 && \
+    pip install --no-cache-dir python-jose==3.3.0
     echo "Dépendances de base installées avec succès"
 
 # Installer les plugins LiveKit séparément
