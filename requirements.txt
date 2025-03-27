@@ -19,3 +19,6 @@ fastapi==0.103.1
 
 # Pour la gestion des JWT
 python-jose==3.3.0
+
+# Pour la gestion des processus
+psutil==5.9.5
