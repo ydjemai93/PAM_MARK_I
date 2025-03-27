@@ -41,8 +41,6 @@ COPY . .
 # Exposer le port pour l'application
 EXPOSE 8000
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False)
+
 # Commande pour démarrer l'application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
