@@ -4,6 +4,7 @@ import logging
 from app.core.security import verify_token
 from app.services.livekit_service import livekit_service
 from app.services.sip_service import sip_service
+from app.services.agent_service import agent_service  # Importer le nouveau service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -25,27 +26,24 @@ async def deploy_agent(
         logger.error("Agent ID manquant dans la requête")
         raise HTTPException(status_code=400, detail="Agent ID is required")
     
-    if not name:
-        logger.warning(f"Nom d'agent manquant pour agent_id={agent_id}, utilisation d'un nom par défaut")
-        name = f"Agent-{agent_id}"
-    
-    # Simulation du déploiement de l'agent dans LiveKit
-    # Dans une implémentation réelle, vous appellerez un service LiveKit ici
-    # Exemple : result = await livekit_service.deploy_agent(agent_id, name, prompt_template)
-    
-    # Pour le moment, nous simulons simplement une réponse
-    worker_id = f"agent-{agent_id}"
-    
-    logger.info(f"Agent déployé avec succès: agent_id={agent_id}, worker_id={worker_id}")
-    
-    # Dans une version future, vous pourriez enregistrer des métriques
-    # metrics.increment("agent.deployed")
-    
-    return {
-        "agent_id": agent_id,
-        "worker_id": worker_id,
-        "status": "deployed"
-    }
+    # Déployer l'agent à l'aide du service
+    try:
+        deploy_result = await agent_service.deploy_agent(
+            agent_id=str(agent_id),
+            name=name if isinstance(name, str) else str(name),
+            prompt_template=prompt_template if isinstance(prompt_template, str) else str(prompt_template)
+        )
+        
+        logger.info(f"Agent déployé avec succès: {deploy_result}")
+        
+        return {
+            "agent_id": agent_id,
+            "worker_id": deploy_result.get("worker_id"),
+            "status": "deployed"
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors du déploiement de l'agent: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to deploy agent: {str(e)}")
 
 @router.post("/calls/initiate", response_model=Dict[str, Any])
 async def initiate_call(
@@ -128,91 +126,3 @@ async def create_trunk(
     logger.info(f"Trunk SIP créé avec succès: trunk_id={trunk_result.get('trunk_id')}")
     
     return trunk_result
-
-@router.get("/agents/status", response_model=Dict[str, Any])
-async def get_agents_status(
-    token_payload: Dict[str, Any] = Depends(verify_token)
-):
-    """Récupère le statut de tous les agents déployés"""
-    logger.info("Récupération du statut des agents")
-    
-    try:
-        # Récupérer les workers d'agents
-        workers_result = await livekit_service.get_agent_workers()
-        
-        if workers_result.get("status") != "success":
-            logger.error(f"Échec de récupération des workers d'agents: {workers_result}")
-            raise HTTPException(status_code=500, detail="Failed to retrieve agent workers")
-        
-        # Récupérer les salles actives
-        rooms_result = await livekit_service.list_rooms()
-        
-        if rooms_result.get("status") != "success":
-            logger.error(f"Échec de récupération des salles: {rooms_result}")
-            raise HTTPException(status_code=500, detail="Failed to retrieve rooms")
-        
-        logger.info(f"Statut récupéré: {len(workers_result.get('workers', []))} workers, {len(rooms_result.get('rooms', []))} salles")
-        
-        return {
-            "workers": workers_result.get("workers", []),
-            "rooms": rooms_result.get("rooms", []),
-            "status": "success"
-        }
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du statut des agents: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/agents/{agent_id}/status", response_model=Dict[str, Any])
-async def get_agent_status(
-    agent_id: str,
-    token_payload: Dict[str, Any] = Depends(verify_token)
-):
-    """Récupère le statut d'un agent spécifique"""
-    worker_id = f"agent-{agent_id}"
-    logger.info(f"Récupération du statut de l'agent: {worker_id}")
-    
-    try:
-        # Récupérer les workers d'agents
-        workers_result = await livekit_service.get_agent_workers()
-        
-        if workers_result.get("status") != "success":
-            logger.error(f"Échec de récupération des workers d'agents: {workers_result}")
-            raise HTTPException(status_code=500, detail="Failed to retrieve agent workers")
-        
-        # Filtrer pour trouver l'agent spécifié
-        agent_workers = [worker for worker in workers_result.get("workers", []) 
-                        if worker.get("name") == worker_id]
-        
-        if not agent_workers:
-            logger.warning(f"Agent non trouvé: {worker_id}")
-            return {
-                "agent_id": agent_id,
-                "worker_id": worker_id,
-                "status": "not_found",
-                "active_rooms": []
-            }
-        
-        # Récupérer les salles actives
-        rooms_result = await livekit_service.list_rooms()
-        
-        active_rooms = []
-        if rooms_result.get("status") == "success":
-            # Note: Ceci est une approximation, car il est difficile de savoir quelles salles
-            # sont associées à un agent spécifique sans informations supplémentaires
-            # Dans une implémentation réelle, vous pourriez stocker cette relation
-            for room in rooms_result.get("rooms", []):
-                if f"agent-{agent_id}" in room.get("name", ""):
-                    active_rooms.append(room)
-        
-        logger.info(f"Statut de l'agent {worker_id}: {agent_workers[0].get('state')}, salles actives: {len(active_rooms)}")
-        
-        return {
-            "agent_id": agent_id,
-            "worker_id": worker_id,
-            "status": agent_workers[0].get("state", "unknown"),
-            "worker_details": agent_workers[0],
-            "active_rooms": active_rooms
-        }
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération du statut de l'agent {worker_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
