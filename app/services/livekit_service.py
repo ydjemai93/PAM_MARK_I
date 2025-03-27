@@ -59,21 +59,31 @@ class LiveKitService:
         logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
         
         try:
-            request = api.CreateAgentDispatchRequest(
-                agent_name=agent_name,
-                room_name=room_name,
-                metadata=metadata
+            # Préparation des options de dispatch
+            dispatch_options = api.AgentDispatchOptions(
+                name=agent_name,
+                room=room_name,
             )
             
+            # Configuration des métadonnées si fournies
+            if metadata:
+                dispatch_options.metadata = metadata
+            
+            # Création de la requête de dispatch
+            request = api.CreateAgentDispatchRequest(
+                options=dispatch_options
+            )
+            
+            # Dispatch de l'agent
             response = await self.livekit_api.agent_dispatch.create_dispatch(request)
             
             elapsed_time = time.time() - start_time
-            logger.info(f"Agent dispatché avec succès: id={response.id}, agent={response.agent_name}, salle={response.room_name}, temps={elapsed_time:.2f}s")
+            logger.info(f"Agent dispatché avec succès: id={response.id}, agent={response.options.name}, salle={response.options.room}, temps={elapsed_time:.2f}s")
             
             return {
                 "dispatch_id": response.id,
-                "agent_name": response.agent_name,
-                "room_name": response.room_name,
+                "agent_name": response.options.name,
+                "room_name": response.options.room,
                 "status": "dispatched",
                 "elapsed_time_ms": int(elapsed_time * 1000)
             }
