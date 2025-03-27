@@ -1,11 +1,16 @@
-livekit-agents==1.0.2
-livekit-plugins-silero==0.1.8
-livekit-plugins-openai==0.4.0
-livekit-plugins-deepgram==0.2.0
-numpy==1.26.0
-pydantic==2.5.2
+# Dépendances de base
+numpy==1.24.3
+pydantic==1.10.8
 python-dotenv==1.0.0
-websockets==11.0.3
-httpx==0.25.2
-protobuf==4.24.4
-aiohttp==3.9.1
+websockets==10.4
+httpx==0.24.1
+protobuf==4.23.4
+aiohttp==3.8.5
+
+# LiveKit et plugins (versions compatibles avec Python 3.9)
+livekit-agents==1.0.0
+livekit-plugins-openai==0.3.0
+livekit-plugins-deepgram==0.1.0
+
+# Installer silero depuis GitHub car la version PyPI peut causer des problèmes
+git+https://github.com/livekit/livekit-plugins-silero.git
