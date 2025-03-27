@@ -1,8 +1,6 @@
-# Dépendances de base
 numpy==1.24.3
 pydantic==1.10.8
 python-dotenv==1.0.0
-python-jose[cryptography]==3.3.0
 websockets==10.4
 httpx==0.24.1
 protobuf==4.23.4
@@ -16,7 +14,8 @@ livekit-plugins-deepgram==0.1.0
 # Installer silero depuis GitHub car la version PyPI peut causer des problèmes
 git+https://github.com/livekit/livekit-plugins-silero.git
 
-# Ajoutez cette ligne à requirements.txt
 uvicorn==0.23.2
 fastapi==0.103.1
 
+# Pour la gestion des JWT
+python-jose==3.3.0
