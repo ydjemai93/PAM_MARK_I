@@ -54,36 +54,36 @@ class LiveKitService:
             logger.error(f"Erreur lors de la création de la salle LiveKit: {e}, temps={elapsed_time:.2f}s")
             return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
     
-    async def create_agent_dispatch(self, agent_name: str, room_name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
-        start_time = time.time()
-        logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
+   async def create_agent_dispatch(self, agent_name: str, room_name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
+    start_time = time.time()
+    logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
+    
+    try:
+        # Modification ici - changer 'room' en 'room_name'
+        request = api.CreateAgentDispatchRequest(
+            agent_name=agent_name,
+            room_name=room_name,  # Modifié de 'room' à 'room_name'
+            metadata=metadata
+        )
         
-        try:
-            request = api.CreateAgentDispatchRequest(
-                agent_name=agent_name,
-                room=room_name,
-                metadata=metadata
-            )
-            
-            response = await self.livekit_api.agent_dispatch.create_dispatch(request)
-            
-            elapsed_time = time.time() - start_time
-            logger.info(f"Agent dispatché avec succès: id={response.id}, agent={response.agent_name}, salle={response.room_name}, temps={elapsed_time:.2f}s")
-            
-            # Vérification supplémentaire de l'état de l'agent (désactivée pour l'instant)
-            # await self._check_agent_status(agent_name, room_name)
-            
-            return {
-                "dispatch_id": response.id,
-                "agent_name": response.agent_name,
-                "room_name": response.room_name,
-                "status": "dispatched",
-                "elapsed_time_ms": int(elapsed_time * 1000)
-            }
-        except Exception as e:
-            elapsed_time = time.time() - start_time
-            logger.error(f"Erreur lors du dispatch de l'agent: {e}, temps={elapsed_time:.2f}s")
-            return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
+        response = await self.livekit_api.agent_dispatch.create_dispatch(request)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"Agent dispatché avec succès: id={response.id}, agent={response.agent_name}, salle={response.room_name}, temps={elapsed_time:.2f}s")
+        
+        return {
+            "dispatch_id": response.id,
+            "agent_name": response.agent_name,
+            "room_name": response.room_name,
+            "status": "dispatched",
+            "elapsed_time_ms": int(elapsed_time * 1000)
+        }
+    except Exception as e:
+    elapsed_time = time.time() - start_time
+    logger.error(f"Erreur lors du dispatch de l'agent: {str(e)}, type: {type(e).__name__}, temps={elapsed_time:.2f}s")
+    import traceback
+    logger.error(f"Stacktrace: {traceback.format_exc()}")
+    return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
     
     async def _check_agent_status(self, agent_name: str, room_name: str) -> None:
         """
