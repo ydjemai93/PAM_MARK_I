@@ -1,77 +1,98 @@
 import logging
-import asyncio
-import subprocess
-import os
-import json
 import time
-import signal
-from typing import Dict, Any, Optional, List
-import psutil
-from app.core.config import settings
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
 class AgentService:
+    """
+    Service pour gérer le déploiement des agents.
+    Dans cette version simplifiée, nous simulons seulement le déploiement.
+    """
+    
     def __init__(self):
-        self.agents_directory = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "agents")
-        self.running_agents = {}  # Pour stocker les processus des agents en cours d'exécution
-        self._ensure_agents_directory()
-        self._load_running_agents()  # Charger les agents déjà en cours d'exécution
-        logger.info(f"Service d'agents initialisé: répertoire={self.agents_directory}")
-    
-    def _ensure_agents_directory(self):
-        """Crée le répertoire des agents s'il n'existe pas"""
-        if not os.path.exists(self.agents_directory):
-            os.makedirs(self.agents_directory)
-            logger.info(f"Répertoire des agents créé: {self.agents_directory}")
-    
-    def _load_running_agents(self):
-        """Charge l'état des agents en cours d'exécution"""
-        try:
-            state_file = os.path.join(self.agents_directory, "agent_state.json")
-            if os.path.exists(state_file):
-                with open(state_file, "r") as f:
-                    state = json.load(f)
-                    
-                # Vérifier quels processus sont réellement en cours d'exécution
-                for agent_id, proc_info in state.items():
-                    pid = proc_info.get("pid")
-                    if pid and self._is_process_running(pid):
-                        self.running_agents[agent_id] = proc_info
-                        logger.info(f"Agent trouvé en cours d'exécution: id={agent_id}, pid={pid}")
-                    else:
-                        logger.info(f"Agent marqué comme en cours d'exécution mais introuvable: id={agent_id}")
-                
-                logger.info(f"État des agents chargé: {len(self.running_agents)} agents en cours d'exécution")
-        except Exception as e:
-            logger.error(f"Erreur lors du chargement de l'état des agents: {e}")
-    
-    def _save_running_agents(self):
-        """Sauvegarde l'état des agents en cours d'exécution"""
-        try:
-            state_file = os.path.join(self.agents_directory, "agent_state.json")
-            with open(state_file, "w") as f:
-                json.dump(self.running_agents, f)
-            logger.debug("État des agents sauvegardé")
-        except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde de l'état des agents: {e}")
-    
-    def _is_process_running(self, pid: int) -> bool:
-        """Vérifie si un processus est en cours d'exécution"""
-        try:
-            # Vérifie si le processus existe
-            process = psutil.Process(pid)
-            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            return False
+        self.running_agents = {}  # Pour simuler le suivi des agents en cours d'exécution
+        logger.info("Service d'agents initialisé")
     
     async def deploy_agent(self, agent_id: str, name: str, prompt_template: str) -> Dict[str, Any]:
-        """Déploie un agent dans LiveKit"""
-        start_time = time.time()
-        logger.info(f"Déploiement de l'agent: id={agent_id}, name={name}")
+        """
+        Simule le déploiement d'un agent dans LiveKit.
         
+        Dans une implémentation réelle, cette fonction démarrerait un processus
+        d'agent LiveKit avec les paramètres fournis.
+        
+        Args:
+            agent_id: L'ID de l'agent à déployer
+            name: Le nom de l'agent
+            prompt_template: Le template de prompt pour l'agent
+            
+        Returns:
+            Un dictionnaire contenant le statut du déploiement
+        """
+        start_time = time.time()
         worker_id = f"agent-{agent_id}"
         
-        # Vérifier si l'agent est déjà en cours d'exécution
+        logger.info(f"Déploiement de l'agent: id={agent_id}, name={name}")
+        
+        # Simuler un délai de déploiement
+        time.sleep(0.5)
+        
+        # Enregistrer l'agent comme en cours d'exécution
+        self.running_agents[worker_id] = {
+            "agent_id": agent_id,
+            "name": name,
+            "status": "running",
+            "deployed_at": time.time()
+        }
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"Agent déployé avec succès: id={agent_id}, worker_id={worker_id}, temps={elapsed_time:.2f}s")
+        
+        return {
+            "agent_id": agent_id,
+            "worker_id": worker_id,
+            "status": "deployed",
+            "elapsed_time_ms": int(elapsed_time * 1000)
+        }
+    
+    async def get_agent_status(self, agent_id: str) -> Dict[str, Any]:
+        """
+        Récupère le statut d'un agent.
+        
+        Args:
+            agent_id: L'ID de l'agent
+            
+        Returns:
+            Un dictionnaire contenant le statut de l'agent
+        """
+        worker_id = f"agent-{agent_id}"
+        
         if worker_id in self.running_agents:
-            logger.info(f"Agent déjà dé
+            agent_info = self.running_agents[worker_id]
+            return {
+                "agent_id": agent_id,
+                "worker_id": worker_id,
+                "status": agent_info.get("status", "unknown"),
+                "deployed_at": agent_info.get("deployed_at")
+            }
+        else:
+            return {
+                "agent_id": agent_id,
+                "worker_id": worker_id,
+                "status": "not_found"
+            }
+    
+    async def list_agents(self) -> Dict[str, Any]:
+        """
+        Liste tous les agents en cours d'exécution.
+        
+        Returns:
+            Un dictionnaire contenant la liste des agents
+        """
+        return {
+            "status": "success",
+            "agents": list(self.running_agents.values())
+        }
+
+# Instancier le service
+agent_service = AgentService()
