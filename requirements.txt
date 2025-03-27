@@ -14,3 +14,7 @@ livekit-plugins-deepgram==0.1.0
 
 # Installer silero depuis GitHub car la version PyPI peut causer des problèmes
 git+https://github.com/livekit/livekit-plugins-silero.git
+
+# Ajoutez cette ligne à requirements.txt
+uvicorn==0.23.2
+fastapi==0.103.1
