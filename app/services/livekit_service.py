@@ -54,14 +54,14 @@ class LiveKitService:
             logger.error(f"Erreur lors de la création de la salle LiveKit: {e}, temps={elapsed_time:.2f}s")
             return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
     
-  async def create_agent_dispatch(self, agent_name: str, room_name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
+    async def create_agent_dispatch(self, agent_name: str, room_name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
         start_time = time.time()
         logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
         
         try:
             request = api.CreateAgentDispatchRequest(
                 agent_name=agent_name,
-                room_name=room_name,  # Modifié de 'room' à 'room_name'
+                room_name=room_name,
                 metadata=metadata
             )
             
@@ -146,4 +146,5 @@ class LiveKitService:
             logger.error(f"Erreur lors de la récupération des workers d'agents: {e}")
             return {"status": "error", "error": str(e)}
 
+# Instancier le service
 livekit_service = LiveKitService()
