@@ -1,6 +1,6 @@
 import logging
 import httpx
-import inspect
+import json
 from typing import Dict, Any
 from livekit import api
 from app.core.config import settings
@@ -41,20 +41,51 @@ class SipService:
             logger.error(f"Error creating outbound trunk: {e}")
             return {"status": "error", "error": str(e)}
     
+    async def list_trunks(self) -> Dict[str, Any]:
+        """Lister tous les trunks SIP outbound disponibles"""
+        try:
+            # Créer une requête vide pour lister les trunks
+            request = api.ListSIPOutboundTrunkRequest()
+            response = await self.livekit_api.sip.list_sip_outbound_trunk(request)
+            
+            trunks = []
+            for trunk in response.items:
+                trunks.append({
+                    "id": trunk.id,
+                    "name": trunk.name,
+                    "address": trunk.address,
+                    "numbers": trunk.numbers
+                })
+            
+            logger.info(f"Trunks SIP disponibles: {json.dumps(trunks)}")
+            return {"status": "success", "trunks": trunks}
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des trunks: {e}")
+            return {"status": "error", "error": str(e)}
+    
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
-            # En se basant sur les exemples de la documentation LiveKit (document Make outbound calls)
+            # Vérifier d'abord les trunks disponibles
+            trunks_result = await self.list_trunks()
+            if trunks_result.get("status") == "success":
+                trunk_ids = [trunk["id"] for trunk in trunks_result.get("trunks", [])]
+                if trunk_id not in trunk_ids:
+                    logger.warning(f"Le trunk ID {trunk_id} n'existe pas. Trunks disponibles: {trunk_ids}")
+                    # Utilisons le premier trunk disponible si le trunk spécifié n'existe pas
+                    if trunk_ids:
+                        trunk_id = trunk_ids[0]
+                        logger.info(f"Utilisation du trunk ID alternatif: {trunk_id}")
+                    else:
+                        raise ValueError("Aucun trunk SIP disponible")
+            
+            # Log des informations d'appel
             logger.info(f"Tentative d'appel avec: trunk_id={trunk_id}, phone={phone_number}, room={room_name}")
             
-            # Créer la requête en suivant exactement l'exemple de la documentation PDF
-            request = api.CreateSIPParticipantRequest(
-                sip_trunk_id=trunk_id,  # ID du trunk outbound
-                sip_call_to=phone_number,  # Numéro à appeler
-                room_name=room_name,  # Nom de la salle LiveKit
-                participant_identity="caller",  # Identité du participant
-                participant_name="Phone Caller",  # Nom du participant
-                play_dialtone=True  # Jouer une tonalité pendant la numérotation
-            )
+            # Utiliser le format exact de la documentation LiveKit
+            request = api.CreateSIPParticipantRequest()
+            request.sip_trunk_id = trunk_id
+            request.sip_call_to = phone_number
+            request.room_name = room_name
             
             # Création du participant SIP
             response = await self.livekit_api.sip.create_sip_participant(request)
