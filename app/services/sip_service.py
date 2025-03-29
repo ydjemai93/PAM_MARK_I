@@ -44,12 +44,12 @@ class SipService:
         try:
             # Préparation de la requête de création de participant SIP
             request = api.CreateSIPParticipantRequest(
-                trunk_id=trunk_id,
-                to=phone_number,
-                room=room_name,
-                identity="caller",
-                name="Phone Caller",
-                play_dialtone=True,  # Ajout de l'option de tonalité de numérotation
+                sip_trunk_id=trunk_id,
+                sip_call_to=phone_number,
+                room_name=room_name,
+                participant_identity="caller",
+                participant_name="Phone Caller",
+                play_dialtone=True,
                 attributes={
                     "call_id": call_id,
                     "phone_number": phone_number
@@ -88,8 +88,8 @@ class SipService:
                 "phone_number": phone_number
             }
             
-            # Notifier Xano de l'échec
-            await self._send_call_event_to_xano(call_id, "failed", None, error=error_info)
+            # Notifier Xano de l'échec - convertir l'erreur en chaîne pour éviter les problèmes avec l'API Xano
+            await self._send_call_event_to_xano(call_id, "failed", None, error=str(error_info))
             
             return error_info
             
