@@ -47,20 +47,14 @@ class SipService:
             sig = str(inspect.signature(api.CreateSIPParticipantRequest.__init__))
             logger.info(f"Signature CreateSIPParticipantRequest: {sig}")
             
-            # Vérifier les trunks disponibles avant de faire l'appel
-            list_trunks_response = await self.livekit_api.sip.list_sip_outbound_trunk()
-            trunk_ids = [trunk.id for trunk in list_trunks_response.items]
-            logger.info(f"Trunks SIP disponibles: {trunk_ids}")
+            # Au lieu de vérifier les trunks disponibles, nous supposons que le trunk existe
+            # puisque nous ne pouvons pas facilement lister les trunks
+            logger.info(f"Tentative d'utilisation du trunk ID: {trunk_id}")
             
-            if trunk_id not in trunk_ids:
-                raise ValueError(f"Trunk ID {trunk_id} not found in available trunks: {trunk_ids}")
-            
-            # Créer la requête en utilisant uniquement le format exact attendu par l'API
-            # Nous utilisons self comme premier argument car c'est une méthode
-            # Le premier paramètre est toujours self, donc nous l'omettons dans les paramètres nommés
+            # Créer la requête avec les paramètres requis par l'API
             request = api.CreateSIPParticipantRequest()
             
-            # Nous définissons ensuite les attributs individuellement
+            # Définir les attributs nécessaires
             request.sip_trunk_id = trunk_id
             request.sip_call_to = phone_number
             request.room = room_name
@@ -75,7 +69,8 @@ class SipService:
                 "status": "dialing",
                 "trunk_id": trunk_id,
                 "phone_number": phone_number,
-                "call_id": call_id
+                "call_id": call_id,
+                "field_value": "1"  # Ajout du champ requis par Xano
             }
             
             # Notifier Xano du début de l'appel
@@ -95,7 +90,8 @@ class SipService:
                 "status": "error", 
                 "error": str(e),
                 "trunk_id": trunk_id,
-                "phone_number": phone_number
+                "phone_number": phone_number,
+                "field_value": "1"  # Ajout du champ requis par Xano
             }
             
             # Notifier Xano de l'échec
@@ -113,7 +109,7 @@ class SipService:
             payload = {
                 "call_id": call_id,
                 "status": status,
-                "field_value": "1", # Ajout d'un champ requis par Xano
+                "field_value": "1",  # Ajout d'un champ requis par Xano
                 "call_sid": call_sid
             }
             
