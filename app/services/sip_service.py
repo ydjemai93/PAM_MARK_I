@@ -42,17 +42,15 @@ class SipService:
     
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
-            # Préparation de la requête de création de participant SIP
-            # Nous retirons le champ 'attributes' qui n'est pas supporté
-            # et utilisons metadata pour stocker des informations supplémentaires
+            # Journalisation pour inspecter les champs disponibles
+            logger.info(f"Tentative d'appel avec: trunk_id={trunk_id}, phone_number={phone_number}, room_name={room_name}")
+            
+            # Utilisons seulement les champs de base confirmés
             request = api.CreateSIPParticipantRequest(
                 sip_trunk_id=trunk_id,
                 sip_call_to=phone_number,
                 room_name=room_name,
-                participant_identity="caller",
-                participant_name="Phone Caller",
-                play_dialtone=True,
-                metadata=f'{{"call_id":"{call_id}","phone_number":"{phone_number}"}}'
+                # pas de champs additionnels qui posent problème
             )
             
             # Création du participant SIP
@@ -64,7 +62,8 @@ class SipService:
                 "room_name": response.room,
                 "status": "dialing",
                 "trunk_id": trunk_id,
-                "phone_number": phone_number
+                "phone_number": phone_number,
+                "call_id": call_id
             }
             
             # Notifier Xano du début de l'appel
@@ -87,7 +86,7 @@ class SipService:
                 "phone_number": phone_number
             }
             
-            # Notifier Xano de l'échec - convertir l'erreur en chaîne pour éviter les problèmes avec l'API Xano
+            # Notifier Xano de l'échec
             await self._send_call_event_to_xano(call_id, "failed", None, error=str(error_info))
             
             return error_info
