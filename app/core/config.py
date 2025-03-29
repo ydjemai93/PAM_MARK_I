@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     xano_webhook_url: str = os.getenv("XANO_WEBHOOK_URL", "")
     xano_api_key: str = os.getenv("XANO_API_KEY", "")
     
+    # Paramètres Twilio
+    twilio_account_sid: str = os.getenv("TWILIO_ACCOUNT_SID", "")
+    twilio_auth_token: str = os.getenv("TWILIO_AUTH_TOKEN", "")
+    twilio_phone_number: str = os.getenv("TWILIO_PHONE_NUMBER", "")
+    
     # Modification ici - avec une valeur par défaut sécurisée
     cors_origins: List[str] = []
     
