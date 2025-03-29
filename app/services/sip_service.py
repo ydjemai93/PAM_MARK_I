@@ -43,6 +43,8 @@ class SipService:
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
             # Préparation de la requête de création de participant SIP
+            # Nous retirons le champ 'attributes' qui n'est pas supporté
+            # et utilisons metadata pour stocker des informations supplémentaires
             request = api.CreateSIPParticipantRequest(
                 sip_trunk_id=trunk_id,
                 sip_call_to=phone_number,
@@ -50,10 +52,7 @@ class SipService:
                 participant_identity="caller",
                 participant_name="Phone Caller",
                 play_dialtone=True,
-                attributes={
-                    "call_id": call_id,
-                    "phone_number": phone_number
-                }
+                metadata=f'{{"call_id":"{call_id}","phone_number":"{phone_number}"}}'
             )
             
             # Création du participant SIP
