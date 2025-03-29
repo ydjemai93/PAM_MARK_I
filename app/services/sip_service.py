@@ -17,9 +17,23 @@ class SipService:
         )
         self.xano_webhook_url = settings.xano_webhook_url
         self.xano_api_key = settings.xano_api_key
+        # Cache pour les trunks créés
+        self.created_trunks = {}
     
     async def create_outbound_trunk(self, name: str, phone_number: str, auth_username: str, auth_password: str) -> Dict[str, Any]:
         try:
+            # Vérifier si nous avons déjà créé un trunk pour ce numéro
+            for trunk_id, trunk_info in self.created_trunks.items():
+                if phone_number in trunk_info.get("numbers", []):
+                    logger.info(f"Trunk existant trouvé pour {phone_number}: {trunk_id}")
+                    return {
+                        "trunk_id": trunk_id,
+                        "name": trunk_info.get("name"),
+                        "numbers": trunk_info.get("numbers"),
+                        "status": "existing"
+                    }
+            
+            # Création d'un nouveau trunk
             trunk = api.SIPOutboundTrunkInfo(
                 name=name,
                 address="sip.twilio.com",
@@ -30,6 +44,15 @@ class SipService:
             
             request = api.CreateSIPOutboundTrunkRequest(trunk=trunk)
             response = await self.livekit_api.sip.create_sip_outbound_trunk(request)
+            
+            # Stocker le trunk créé dans le cache
+            self.created_trunks[response.id] = {
+                "name": response.name,
+                "numbers": response.numbers,
+                "address": response.address
+            }
+            
+            logger.info(f"Nouveau trunk créé: id={response.id}, name={response.name}")
             
             return {
                 "trunk_id": response.id,
@@ -50,6 +73,13 @@ class SipService:
             
             trunks = []
             for trunk in response.items:
+                # Mettre à jour notre cache de trunks
+                self.created_trunks[trunk.id] = {
+                    "name": trunk.name,
+                    "numbers": trunk.numbers,
+                    "address": trunk.address
+                }
+                
                 trunks.append({
                     "id": trunk.id,
                     "name": trunk.name,
@@ -57,7 +87,7 @@ class SipService:
                     "numbers": trunk.numbers
                 })
             
-            logger.info(f"Trunks SIP disponibles: {json.dumps(trunks)}")
+            logger.info(f"Trunks SIP disponibles: {trunks}")
             return {"status": "success", "trunks": trunks}
         except Exception as e:
             logger.error(f"Erreur lors de la récupération des trunks: {e}")
@@ -67,21 +97,37 @@ class SipService:
         try:
             # Vérifier d'abord les trunks disponibles
             trunks_result = await self.list_trunks()
+            
+            # Même si le trunk spécifié n'existe pas, nous allons en créer un nouveau
             if trunks_result.get("status") == "success":
                 trunk_ids = [trunk["id"] for trunk in trunks_result.get("trunks", [])]
                 if trunk_id not in trunk_ids:
-                    logger.warning(f"Le trunk ID {trunk_id} n'existe pas. Trunks disponibles: {trunk_ids}")
-                    # Utilisons le premier trunk disponible si le trunk spécifié n'existe pas
-                    if trunk_ids:
-                        trunk_id = trunk_ids[0]
-                        logger.info(f"Utilisation du trunk ID alternatif: {trunk_id}")
+                    logger.warning(f"Le trunk ID {trunk_id} n'existe pas dans LiveKit. Création d'un nouveau trunk.")
+                    
+                    # Configuration pour Twilio à partir des variables d'environnement
+                    twilio_username = settings.twilio_account_sid
+                    twilio_password = settings.twilio_auth_token
+                    twilio_number = settings.twilio_phone_number
+                    
+                    # Créer un nouveau trunk avec les informations de Twilio
+                    new_trunk_result = await self.create_outbound_trunk(
+                        name=f"Auto Trunk for {phone_number}",
+                        phone_number=twilio_number,
+                        auth_username=twilio_username,
+                        auth_password=twilio_password
+                    )
+                    
+                    if new_trunk_result.get("status") in ["created", "existing"]:
+                        trunk_id = new_trunk_result.get("trunk_id")
+                        logger.info(f"Nouveau trunk créé: {trunk_id}")
                     else:
-                        raise ValueError("Aucun trunk SIP disponible")
+                        logger.error(f"Échec de création du trunk: {new_trunk_result}")
+                        raise ValueError(f"Impossible de créer un trunk pour {phone_number}")
             
             # Log des informations d'appel
             logger.info(f"Tentative d'appel avec: trunk_id={trunk_id}, phone={phone_number}, room={room_name}")
             
-            # Utiliser le format exact de la documentation LiveKit
+            # Utiliser le format exact adapté à la version de l'API LiveKit
             request = api.CreateSIPParticipantRequest()
             request.sip_trunk_id = trunk_id
             request.sip_call_to = phone_number
