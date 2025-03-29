@@ -1,5 +1,6 @@
 import logging
 import httpx
+import inspect
 from typing import Dict, Any
 from livekit import api
 from app.core.config import settings
@@ -42,16 +43,27 @@ class SipService:
     
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
-            # Journalisation pour inspecter les champs disponibles
-            logger.info(f"Tentative d'appel avec: trunk_id={trunk_id}, phone_number={phone_number}, room_name={room_name}")
+            # Déboguer l'API LiveKit - afficher les paramètres disponibles pour CreateSIPParticipantRequest
+            sig = str(inspect.signature(api.CreateSIPParticipantRequest.__init__))
+            logger.info(f"Signature CreateSIPParticipantRequest: {sig}")
             
-            # Utilisons seulement les champs de base confirmés
-            request = api.CreateSIPParticipantRequest(
-                sip_trunk_id=trunk_id,
-                sip_call_to=phone_number,
-                room_name=room_name,
-                # pas de champs additionnels qui posent problème
-            )
+            # Vérifier les trunks disponibles avant de faire l'appel
+            list_trunks_response = await self.livekit_api.sip.list_sip_outbound_trunk()
+            trunk_ids = [trunk.id for trunk in list_trunks_response.items]
+            logger.info(f"Trunks SIP disponibles: {trunk_ids}")
+            
+            if trunk_id not in trunk_ids:
+                raise ValueError(f"Trunk ID {trunk_id} not found in available trunks: {trunk_ids}")
+            
+            # Créer la requête en utilisant uniquement le format exact attendu par l'API
+            # Nous utilisons self comme premier argument car c'est une méthode
+            # Le premier paramètre est toujours self, donc nous l'omettons dans les paramètres nommés
+            request = api.CreateSIPParticipantRequest()
+            
+            # Nous définissons ensuite les attributs individuellement
+            request.sip_trunk_id = trunk_id
+            request.sip_call_to = phone_number
+            request.room = room_name
             
             # Création du participant SIP
             response = await self.livekit_api.sip.create_sip_participant(request)
@@ -87,11 +99,12 @@ class SipService:
             }
             
             # Notifier Xano de l'échec
-            await self._send_call_event_to_xano(call_id, "failed", None, error=str(error_info))
+            await self._send_call_event_to_xano(call_id, "failed", None, simple_error=str(e))
             
             return error_info
             
-    async def _send_call_event_to_xano(self, call_id: str, status: str, call_sid: str = None, error: Any = None, additional_info: Dict[str, Any] = None):
+    async def _send_call_event_to_xano(self, call_id: str, status: str, call_sid: str = None, 
+                                       simple_error: str = None, error: Any = None, additional_info: Dict[str, Any] = None):
         """
         Envoi d'événements d'appel à Xano avec des informations détaillées
         """
@@ -100,9 +113,13 @@ class SipService:
             payload = {
                 "call_id": call_id,
                 "status": status,
-                "call_sid": call_sid,
-                "error": error
+                "field_value": "1", # Ajout d'un champ requis par Xano
+                "call_sid": call_sid
             }
+            
+            # Ajouter l'erreur si présente
+            if simple_error:
+                payload["error"] = simple_error
             
             # Ajouter des informations supplémentaires si disponibles
             if additional_info:
@@ -113,6 +130,9 @@ class SipService:
                 "X-API-Key": self.xano_api_key,
                 "Content-Type": "application/json"
             }
+            
+            # Log du payload pour débogage
+            logger.debug(f"Envoi à Xano, payload: {payload}")
             
             # Envoi asynchrone à Xano
             async with httpx.AsyncClient() as client:
