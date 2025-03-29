@@ -43,24 +43,41 @@ class SipService:
     
     async def make_outbound_call(self, trunk_id: str, phone_number: str, room_name: str, call_id: str) -> Dict[str, Any]:
         try:
-            # Déboguer l'API LiveKit - afficher les paramètres disponibles pour CreateSIPParticipantRequest
-            sig = str(inspect.signature(api.CreateSIPParticipantRequest.__init__))
-            logger.info(f"Signature CreateSIPParticipantRequest: {sig}")
+            # Déboguer l'API LiveKit - inspecter l'objet CreateSIPParticipantRequest
+            try:
+                # Créer une instance temporaire pour inspecter les attributs (debug uniquement)
+                temp_request = api.CreateSIPParticipantRequest()
+                dir_result = dir(temp_request)
+                logger.info(f"Attributs de CreateSIPParticipantRequest: {dir_result}")
+            except Exception as inspect_err:
+                logger.error(f"Erreur lors de l'inspection: {inspect_err}")
             
-            # Au lieu de vérifier les trunks disponibles, nous supposons que le trunk existe
-            # puisque nous ne pouvons pas facilement lister les trunks
-            logger.info(f"Tentative d'utilisation du trunk ID: {trunk_id}")
+            # Nous allons utiliser le constructeur directement avec tous les noms
+            # de paramètres possibles pour essayer de trouver la combinaison correcte
+            # Nous utilisons room_name pour room_name et room
+            try:
+                request = api.CreateSIPParticipantRequest()
+                request.sip_trunk_id = trunk_id
+                request.sip_call_to = phone_number
+                request.room_name = room_name  # Essayer d'abord room_name
+            except Exception as e:
+                logger.warning(f"Erreur avec room_name, tentative avec room: {e}")
+                request = api.CreateSIPParticipantRequest()
+                request.sip_trunk_id = trunk_id
+                request.sip_call_to = phone_number
             
-            # Créer la requête avec les paramètres requis par l'API
-            request = api.CreateSIPParticipantRequest()
+            # Laissons l'API déterminer le champ correct pour room
+            # Nous allons passer les informations au format JSON
+            request_json = {
+                "sip_trunk_id": trunk_id,
+                "sip_call_to": phone_number,
+                "room_name": room_name,
+            }
             
-            # Définir les attributs nécessaires
-            request.sip_trunk_id = trunk_id
-            request.sip_call_to = phone_number
-            request.room = room_name
+            logger.info(f"Tentative d'appel avec paramètres: {request_json}")
             
-            # Création du participant SIP
-            response = await self.livekit_api.sip.create_sip_participant(request)
+            # Création du participant SIP en utilisant le format JSON
+            response = await self.livekit_api.sip.create_sip_participant(request_json)
             
             # Préparation des informations de suivi
             call_info = {
