@@ -1,7 +1,6 @@
 import logging
-from typing import Dict, Any, Optional
-import json
 import time
+from typing import Dict, Any, Optional
 import asyncio
 from livekit import api
 from app.core.config import settings
@@ -18,10 +17,29 @@ class LiveKitService:
         logger.info(f"LiveKit service initialisé avec URL: {settings.livekit_url}")
     
     async def create_room(self, room_name: str, empty_timeout: int = 300) -> Dict[str, Any]:
+        """
+        Crée une salle LiveKit ou la récupère si elle existe déjà
+        """
         start_time = time.time()
         logger.info(f"Création de salle LiveKit: nom={room_name}, timeout={empty_timeout}s")
         
         try:
+            # Vérifier si la salle existe déjà
+            try:
+                room_info = await self.livekit_api.room.get_room(api.GetRoomRequest(name=room_name))
+                logger.info(f"Salle existante récupérée: {room_name}")
+                
+                return {
+                    "room_name": room_info.name,
+                    "room_sid": room_info.sid,
+                    "status": "existing",
+                    "elapsed_time_ms": int((time.time() - start_time) * 1000)
+                }
+            except Exception as e:
+                # La salle n'existe pas, on continue pour la créer
+                logger.debug(f"La salle {room_name} n'existe pas encore: {e}")
+            
+            # Créer la salle
             request = api.CreateRoomRequest(
                 name=room_name,
                 empty_timeout=empty_timeout
@@ -30,18 +48,7 @@ class LiveKitService:
             response = await self.livekit_api.room.create_room(request)
             
             elapsed_time = time.time() - start_time
-            logger.info(f"Salle LiveKit créée avec succès: nom={response.name}, sid={response.sid}, temps={elapsed_time:.2f}s")
-            
-            # Log des détails complets pour le débogage
-            details = {
-                'name': response.name,
-                'sid': response.sid,
-                'empty_timeout': response.empty_timeout,
-                'max_participants': response.max_participants,
-                'creation_time': str(response.creation_time) if hasattr(response, 'creation_time') else None,
-                'turn_password': response.turn_password if hasattr(response, 'turn_password') else None,
-            }
-            logger.debug(f"Détails de la salle créée: {json.dumps(details)}")
+            logger.info(f"Salle LiveKit créée: nom={response.name}, sid={response.sid}, temps={elapsed_time:.2f}s")
             
             return {
                 "room_name": response.name,
@@ -51,26 +58,36 @@ class LiveKitService:
             }
         except Exception as e:
             elapsed_time = time.time() - start_time
-            logger.error(f"Erreur lors de la création de la salle LiveKit: {e}, temps={elapsed_time:.2f}s")
+            logger.error(f"Erreur lors de la création de la salle: {e}, temps={elapsed_time:.2f}s")
             return {"status": "error", "error": str(e), "elapsed_time_ms": int(elapsed_time * 1000)}
     
     async def create_agent_dispatch(self, agent_name: str, room_name: str, metadata: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Dispatch un agent dans une salle LiveKit
+        """
         start_time = time.time()
-        logger.info(f"Dispatch d'agent LiveKit: agent={agent_name}, salle={room_name}, metadata={metadata}")
+        logger.info(f"Dispatch d'agent: agent={agent_name}, salle={room_name}, metadata={metadata}")
         
         try:
-            # Création de la requête de dispatch selon l'exemple de la documentation
+            # Définir le métadata par défaut si non fourni
+            if not metadata:
+                metadata = f"{{\"dispatch_time\": {int(time.time())}}}"
+            
+            # Créer la requête de dispatch
             request = api.CreateAgentDispatchRequest(
-                agent_name=agent_name,  # Utilisé comme paramètre nommé
-                room=room_name,  # Utilisé comme paramètre nommé, pas room_name
+                agent_name=agent_name,
+                room=room_name,
                 metadata=metadata
             )
             
-            # Dispatch de l'agent
+            # Dispatcher l'agent
             response = await self.livekit_api.agent_dispatch.create_dispatch(request)
             
             elapsed_time = time.time() - start_time
-            logger.info(f"Agent dispatché avec succès: id={response.id}, agent={agent_name}, salle={room_name}, temps={elapsed_time:.2f}s")
+            logger.info(f"Agent dispatché: id={response.id}, agent={agent_name}, temps={elapsed_time:.2f}s")
+            
+            # Vérifier asynchronement si l'agent a bien rejoint la salle
+            asyncio.create_task(self._check_agent_status(agent_name, room_name))
             
             return {
                 "dispatch_id": response.id,
@@ -81,9 +98,7 @@ class LiveKitService:
             }
         except Exception as e:
             elapsed_time = time.time() - start_time
-            logger.error(f"Erreur lors du dispatch de l'agent: {e}, temps={elapsed_time:.2f}s")
-            # Log détaillé de l'exception
-            logger.exception("Détails complets de l'erreur de dispatch")
+            logger.error(f"Erreur lors du dispatch: {e}, temps={elapsed_time:.2f}s")
             return {
                 "status": "error", 
                 "error": str(e), 
@@ -92,67 +107,29 @@ class LiveKitService:
     
     async def _check_agent_status(self, agent_name: str, room_name: str) -> None:
         """
-        Vérifie si l'agent a bien été dispatché dans la salle en listant les participants
+        Vérifie si l'agent a rejoint la salle avec succès
         """
         try:
-            # Attendre un peu que l'agent rejoigne la salle
-            await asyncio.sleep(1)
+            # Attendre un peu que l'agent rejoigne
+            await asyncio.sleep(2)
             
-            # Lister les participants dans la salle
-            list_request = api.ListParticipantsRequest(room=room_name)
-            participants = await self.livekit_api.room.list_participants(list_request)
+            # Lister les participants
+            request = api.ListParticipantsRequest(room=room_name)
+            participants = await self.livekit_api.room.list_participants(request)
             
-            # Vérifier si l'agent est présent dans la salle
+            # Vérifier si l'agent est présent
             agent_found = False
             for participant in participants:
-                logger.debug(f"Participant dans la salle {room_name}: {participant.identity}, name={participant.name}")
+                logger.debug(f"Participant dans {room_name}: identity={participant.identity}, name={participant.name}")
                 if participant.name == agent_name or participant.identity == agent_name:
                     agent_found = True
                     logger.info(f"Agent {agent_name} trouvé dans la salle {room_name}")
                     break
             
             if not agent_found:
-                logger.warning(f"Agent {agent_name} PAS trouvé dans la salle {room_name} après dispatch")
-        
+                logger.warning(f"Agent {agent_name} non trouvé dans la salle {room_name} après dispatch")
         except Exception as e:
-            logger.error(f"Erreur lors de la vérification du statut de l'agent: {e}")
-
-    async def list_rooms(self) -> Dict[str, Any]:
-        """
-        Liste toutes les salles actives sur le serveur LiveKit
-        """
-        try:
-            response = await self.livekit_api.room.list_rooms()
-            rooms = [{"name": room.name, "sid": room.sid, "num_participants": room.num_participants} 
-                     for room in response]
-            
-            logger.info(f"Nombre de salles actives: {len(rooms)}")
-            return {"status": "success", "rooms": rooms}
-        except Exception as e:
-            logger.error(f"Erreur lors de la récupération des salles: {e}")
-            return {"status": "error", "error": str(e)}
-
-    async def get_agent_workers(self) -> Dict[str, Any]:
-        """
-        Liste tous les workers d'agents disponibles
-        """
-        try:
-            # Cette méthode peut ne pas être disponible dans toutes les versions de l'API
-            # Si vous utilisez la dernière version, décommentez cette section
-            """
-            response = await self.livekit_api.agent.list_workers()
-            workers = [{"name": worker.name, "id": worker.id, "state": worker.state} 
-                      for worker in response]
-            
-            logger.info(f"Nombre de workers d'agents: {len(workers)}")
-            return {"status": "success", "workers": workers}
-            """
-            
-            # Pour l'instant, renvoyer une valeur factice
-            return {"status": "success", "workers": []}
-        except Exception as e:
-            logger.error(f"Erreur lors de la récupération des workers d'agents: {e}")
-            return {"status": "error", "error": str(e)}
+            logger.error(f"Erreur lors de la vérification de l'agent: {e}")
 
 # Instancier le service
 livekit_service = LiveKitService()
