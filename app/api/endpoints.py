@@ -4,7 +4,7 @@ import logging
 from app.core.security import verify_token
 from app.services.livekit_service import livekit_service
 from app.services.sip_service import sip_service
-from app.services.agent_service import agent_service  # Importer le nouveau service
+from app.services.agent_service import agent_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -30,8 +30,8 @@ async def deploy_agent(
     try:
         deploy_result = await agent_service.deploy_agent(
             agent_id=str(agent_id),
-            name=name if isinstance(name, str) else str(name),
-            prompt_template=prompt_template if isinstance(prompt_template, str) else str(prompt_template)
+            name=name or f"agent-{agent_id}",
+            prompt_template=prompt_template or ""
         )
         
         logger.info(f"Agent déployé avec succès: {deploy_result}")
@@ -50,52 +50,70 @@ async def initiate_call(
     call_data: Dict[str, Any] = Body(...),
     token_payload: Dict[str, Any] = Depends(verify_token)
 ):
-    """Initie un appel téléphonique"""
-    logger.info(f"Tentative d'initiation d'appel: {call_data}")
+    """Initie un appel téléphonique sortant avec un agent IA"""
+    logger.info(f"Initialisation d'un appel sortant: {call_data}")
     
+    # Valider les données requises
     agent_id = call_data.get("agent_id")
     phone_number = call_data.get("phone_number")
     trunk_id = call_data.get("trunk_id")
     call_id = call_data.get("call_id")
-    worker_id = call_data.get("worker_id")
     
-    if not all([agent_id, phone_number, trunk_id, call_id, worker_id]):
-        missing_fields = [field for field in ["agent_id", "phone_number", "trunk_id", "call_id", "worker_id"] 
+    if not all([agent_id, phone_number, trunk_id, call_id]):
+        missing_fields = [field for field in ["agent_id", "phone_number", "trunk_id", "call_id"] 
                          if not call_data.get(field)]
-        logger.error(f"Champs manquants dans la requête d'appel: {missing_fields}")
+        logger.error(f"Champs manquants: {missing_fields}")
         raise HTTPException(status_code=400, detail=f"Missing required fields: {', '.join(missing_fields)}")
     
-    # Création de la salle
-    room_name = f"call-{agent_id}-{phone_number.replace('+', '')}"
-    logger.info(f"Création de la salle LiveKit: {room_name}")
-    room_result = await livekit_service.create_room(room_name)
+    # Vérifier si l'agent est déjà déployé ou le déployer
+    worker_id = f"agent-{agent_id}"
+    agent_status = await agent_service.get_agent_status(agent_id)
     
-    if room_result.get("status") != "created":
-        logger.error(f"Échec de création de la salle LiveKit: {room_result}")
+    if agent_status.get("status") != "running":
+        logger.warning(f"L'agent {agent_id} n'est pas en cours d'exécution, tentative de déploiement")
+        deploy_result = await agent_service.deploy_agent(
+            agent_id=str(agent_id),
+            name=f"agent-{agent_id}",
+            prompt_template=call_data.get("prompt_template", "")
+        )
+        worker_id = deploy_result.get("worker_id")
+    
+    # Créer une salle LiveKit pour l'appel
+    room_name = f"call-{call_id}"
+    logger.info(f"Création de la salle pour l'appel: {room_name}")
+    
+    room_result = await livekit_service.create_room(room_name)
+    if room_result.get("status") not in ["created", "existing"]:
+        logger.error(f"Échec de création de la salle: {room_result}")
         raise HTTPException(status_code=500, detail="Failed to create room")
     
-    # Dispatch de l'agent
-    logger.info(f"Dispatch de l'agent: worker_id={worker_id}, room={room_name}")
-    dispatch_result = await livekit_service.create_agent_dispatch(worker_id, room_name)
+    # Dispatcher l'agent dans la salle
+    logger.info(f"Dispatching de l'agent {worker_id} dans la salle {room_name}")
     
+    # Définir le metadata avec le numéro de téléphone pour que l'agent sache qui appeler
+    metadata = f'{{"phone_number": "{phone_number}", "call_id": "{call_id}"}}'
+    
+    dispatch_result = await livekit_service.create_agent_dispatch(worker_id, room_name, metadata)
     if dispatch_result.get("status") != "dispatched":
         logger.error(f"Échec du dispatch de l'agent: {dispatch_result}")
         raise HTTPException(status_code=500, detail="Failed to dispatch agent")
     
-    # Initiation de l'appel
-    logger.info(f"Initiation de l'appel téléphonique: trunk={trunk_id}, phone={phone_number}, room={room_name}")
-    call_result = await sip_service.make_outbound_call(trunk_id, phone_number, room_name, call_id)
+    # Initier l'appel téléphonique
+    logger.info(f"Initiation de l'appel: trunk={trunk_id}, téléphone={phone_number}")
     
+    call_result = await sip_service.make_outbound_call(trunk_id, phone_number, room_name, call_id)
     if call_result.get("status") == "error":
-        logger.error(f"Échec de l'appel téléphonique: {call_result}")
+        logger.error(f"Échec de l'appel: {call_result}")
         raise HTTPException(status_code=500, detail=call_result.get("error"))
     
-    logger.info(f"Appel initié avec succès: call_sid={call_result.get('participant_id')}, status={call_result.get('status')}")
+    logger.info(f"Appel initié: participant_id={call_result.get('participant_id')}")
     
     return {
-        "call_sid": call_result.get("participant_id"),
+        "call_id": call_id,
+        "participant_id": call_result.get("participant_id"),
         "room_name": room_name,
-        "status": call_result.get("status")
+        "status": call_result.get("status"),
+        "agent_id": agent_id
     }
 
 @router.post("/trunks/create", response_model=Dict[str, Any])
@@ -103,8 +121,8 @@ async def create_trunk(
     trunk_data: Dict[str, Any] = Body(...),
     token_payload: Dict[str, Any] = Depends(verify_token)
 ):
-    """Crée un trunk SIP dans LiveKit"""
-    logger.info(f"Tentative de création de trunk SIP: {trunk_data}")
+    """Crée un trunk SIP dans LiveKit pour les appels sortants"""
+    logger.info(f"Création d'un trunk SIP: {trunk_data}")
     
     name = trunk_data.get("name")
     phone_number = trunk_data.get("phone_number")
@@ -114,15 +132,15 @@ async def create_trunk(
     if not all([name, phone_number, auth_username, auth_password]):
         missing_fields = [field for field in ["name", "phone_number", "auth_username", "auth_password"] 
                          if not trunk_data.get(field)]
-        logger.error(f"Champs manquants dans la requête de trunk: {missing_fields}")
+        logger.error(f"Champs manquants: {missing_fields}")
         raise HTTPException(status_code=400, detail=f"Missing required fields: {', '.join(missing_fields)}")
     
     trunk_result = await sip_service.create_outbound_trunk(name, phone_number, auth_username, auth_password)
     
     if trunk_result.get("status") == "error":
-        logger.error(f"Échec de création du trunk SIP: {trunk_result}")
+        logger.error(f"Échec de création du trunk: {trunk_result}")
         raise HTTPException(status_code=500, detail=trunk_result.get("error"))
     
-    logger.info(f"Trunk SIP créé avec succès: trunk_id={trunk_result.get('trunk_id')}")
+    logger.info(f"Trunk créé avec succès: trunk_id={trunk_result.get('trunk_id')}")
     
     return trunk_result
